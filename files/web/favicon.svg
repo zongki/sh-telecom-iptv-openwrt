@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- sh-telecom-iptv 图标: 复古电视 + 兔耳天线 + 播放键
+       配色取自 index.html: 深色底(#111/#1b1b1b), 青绿强调(#365/#4a7) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e4a3e"/>
+      <stop offset="1" stop-color="#0c201a"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8feccb"/>
+      <stop offset="1" stop-color="#43b184"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.28" cy="0.18" r="1.1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.09"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#sheen)"/>
+  <!-- 兔耳天线 -->
+  <path d="M168 96l48 84M344 96l-48 84" stroke="url(#ink)" stroke-width="34"
+        stroke-linecap="round" fill="none"/>
+  <!-- 机身(描边屏框, 内芯微亮于底色) -->
+  <rect x="98" y="192" width="316" height="220" rx="54" fill="#143529"
+        stroke="url(#ink)" stroke-width="34"/>
+  <!-- 播放键 -->
+  <path d="M232 244l92 58-92 58z" fill="url(#ink)"/>
+  <!-- 支脚 -->
+  <path d="M212 424l-24 40M300 424l24 40" stroke="url(#ink)" stroke-width="30"
+        stroke-linecap="round" fill="none"/>
+</svg>

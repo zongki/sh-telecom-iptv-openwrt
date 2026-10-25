@@ -984,8 +984,8 @@ static MHD_HANDLER_RET ahc(void *cls, struct MHD_Connection *conn, const char *u
 static MHD_HANDLER_RET handle_index(struct MHD_Connection *conn)
 {
 	const char *html =
-		"<html><head><title>iptvd</title></head><body>"
-		"<h3>iptvd " IPTVD_VERSION "</h3>"
+		"<html><head><title>IPTV</title></head><body>"
+		"<h3>IPTV " IPTVD_VERSION "</h3>"
 		"<p>udpxy-compatible multicast relay</p>"
 		"<p><a href='/status'>/status</a> &middot; "
 		"<a href='/playlist.m3u'>/playlist.m3u</a> &middot; "
