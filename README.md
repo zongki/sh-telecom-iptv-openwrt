@@ -16,13 +16,18 @@ Web 静态文件 `/usr/share/sh-telecom-iptv/web/`。
 
 ## 构建
 
+本仓库只包含本软件包，不含也不需要发布 OpenWrt 构建系统；把它放进
+一份现成的 OpenWrt 源码树（clone 到 `package/` 下或直接拷贝）即可
+随树构建：
+
 ```
-# 在 OpenWrt 源码树顶层
+# 在 OpenWrt 源码树顶层（本包位于 package/sh-telecom-iptv/）
 echo CONFIG_PACKAGE_sh-telecom-iptv=y >> .config && make defconfig
 make -j$(nproc) package/sh-telecom-iptv/compile
 ```
 
-产物在 `bin/packages/<arch>/base/`（25.12 为 .apk，老版本为 .ipk）。
+产物在 `bin/packages/<arch>/base/`（25.12 为 .apk，老版本为 .ipk），
+拷到设备上 `apk add --allow-untrusted <apk>` 安装即可。
 
 重排窗口、认证链与 epg 的主机端测试（不改产品代码，直接测内部
 状态机 / 全链）：
