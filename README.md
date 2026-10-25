@@ -14,20 +14,76 @@ ottauth → EPG 会话，后台自动续期）+ 频道表/节目单/搜索 + RTS
 `/etc/config/sh-telecom-iptv`，服务 `/etc/init.d/sh-telecom-iptv`，
 Web 静态文件 `/usr/share/sh-telecom-iptv/web/`。
 
-## 构建
+## OpenWrt 集成
 
-本仓库只包含本软件包，不含也不需要发布 OpenWrt 构建系统；把它放进
-一份现成的 OpenWrt 源码树（clone 到 `package/` 下或直接拷贝）即可
-随树构建：
+本仓库只包含本软件包，不含也不需要发布 OpenWrt 构建系统。按下面
+四步把它集成进 OpenWrt。
+
+### 1. 放入构建树
+
+clone（或直接拷贝）到一份现成 OpenWrt 源码树的 `package/` 目录：
 
 ```
-# 在 OpenWrt 源码树顶层（本包位于 package/sh-telecom-iptv/）
+cd <openwrt>/package
+git clone https://github.com/zongki/sh-telecom-iptv.git
+```
+
+包声明 `DEPENDS:=+libuci +libmicrohttpd`，依赖由包系统自动解析。
+
+### 2. 启用并编译
+
+```
+cd <openwrt>
+make menuconfig        # Multimedia 之下选 sh-telecom-iptv：
+                       #   y = 编进固件，M = 单独出包
+# 或脚本方式：
 echo CONFIG_PACKAGE_sh-telecom-iptv=y >> .config && make defconfig
-make -j$(nproc) package/sh-telecom-iptv/compile
+
+make -j$(nproc) package/sh-telecom-iptv/compile   # 只编本包
+# make -j$(nproc)                                 # 整编固件时自动带上
 ```
 
-产物在 `bin/packages/<arch>/base/`（25.12 为 .apk，老版本为 .ipk），
-拷到设备上 `apk add --allow-untrusted <apk>` 安装即可。
+产物在 `bin/packages/<arch>/base/`（25.12 为 .apk，19.07~21.02 老树
+为 .ipk）。需要 4K 台的 AC-3→AAC 转码时，构建树另需
+`CONFIG_BUILD_PATENTED=y` 并在设备上安装 `ffmpeg` 包（见 1.1 节），
+缺了只是回退直通、不影响其他功能。
+
+### 3. 安装到设备
+
+```
+# OpenWrt 25.12（apk）
+scp bin/packages/<arch>/base/sh-telecom-iptv-*.apk root@<设备IP>:/tmp/
+ssh root@<设备IP> "apk add --no-network --allow-untrusted /tmp/sh-telecom-iptv-*.apk"
+
+# OpenWrt 19.07 ~ 21.02（opkg，产物为 .ipk）
+opkg install /tmp/sh-telecom-iptv-*.ipk
+```
+
+安装即完成集成：服务由 procd 托管（崩溃自动拉起）并随安装启用；
+包内 uci-defaults 自动创建 `iptv` 防火墙 zone（放行该入接口的
+IGMP/组播 UDP，fw3/fw4 通吃）。`/etc/config/sh-telecom-iptv` 是
+conffile，升级保留本地配置。
+
+### 4. 首次配置
+
+最少两步（UCI 细节见下文"配置"节与 conf 文件内注释；网络侧的
+VLAN 接口/静态路由准备见 conf 头部示例）：
+
+```
+uci set sh-telecom-iptv.main.device='wan.85'     # 组播源接口（IPTV VLAN）
+uci set sh-telecom-iptv.account.userid='...'     # 上海电信账号三元组，
+uci set sh-telecom-iptv.account.sn='...'         # 填齐即启用认证链/
+uci set sh-telecom-iptv.account.mac='...'        # EPG/时移/点播
+uci commit sh-telecom-iptv
+/etc/init.d/sh-telecom-iptv restart
+```
+
+之后 `http://<设备IP>:4022/` 是 Web 前端，`/status` 看认证与频道表
+状态（冷启动约 30s 出频道表）。服务管理：
+`/etc/init.d/sh-telecom-iptv {start|stop|restart|enable}`；改 UCI
+经 reload trigger 自动重启生效；日志 `logread | grep iptvd`。
+
+### 主机端测试
 
 重排窗口、认证链与 epg 的主机端测试（不改产品代码，直接测内部
 状态机 / 全链）：
