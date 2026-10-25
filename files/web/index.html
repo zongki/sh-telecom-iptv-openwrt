@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>iptvd</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Microsoft YaHei", sans-serif;
+         background: #111; color: #eee; display: flex;
+         height: 100vh; height: 100dvh; }
+  #player { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  video { flex: 1; width: 100%; background: #000; min-height: 0; }
+  video.notl::-webkit-media-controls-timeline,
+  video.notl::-webkit-media-controls-current-time-display,
+  video.notl::-webkit-media-controls-time-remaining-display { display: none; }
+  #bar { padding: 8px 12px; background: #1b1b1b; display: flex; gap: 10px;
+         align-items: center; flex-wrap: wrap; }
+  #bar b { min-width: 8em; }
+  #bar input[type=range] { flex: 1; min-width: 120px; }
+  #bar span { font-variant-numeric: tabular-nums; }
+  #vodWrap { display: none; flex: 1; align-items: center; gap: 10px; min-width: 200px; }
+  button, select { background: #333; color: #eee; border: 1px solid #555;
+                   border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+  button:hover { background: #444; }
+  button:disabled { opacity: .45; cursor: default; }
+  #sidebar { width: 320px; display: flex; flex-direction: column;
+             border-left: 1px solid #333; }
+  #tabs { display: flex; gap: 6px; padding: 8px 8px 0; }
+  #tabs button { flex: 1; }
+  #tabs button.on { background: #365; border-color: #4a7; }
+  #search { margin: 8px; }
+  #search input { width: 100%; padding: 6px 8px; background: #222; color: #eee;
+                  border: 1px solid #444; border-radius: 4px; }
+  #list { flex: 1; overflow-y: auto; }
+  .ch { padding: 6px 12px; cursor: pointer; display: flex; gap: 8px; }
+  .ch:hover { background: #2a2a2a; }
+  .ch.active { background: #365; }
+  .ch .no { color: #888; min-width: 2.5em; text-align: right; }
+  .tag { margin-left: auto; font-size: 11px; color: #7ab; flex: none; }
+  #days, #cats { display: flex; gap: 4px; padding: 6px 8px; overflow-x: auto; flex: none; }
+  #days button, #cats button { padding: 3px 9px; font-size: 12px; white-space: nowrap; }
+  #days button.on, #cats button.on { background: #365; border-color: #4a7; }
+  .pg { padding: 5px 12px; cursor: pointer; display: flex; gap: 8px; font-size: 13px; }
+  .pg:hover { background: #2a2a2a; }
+  .pg.active { background: #365; }
+  .pg .t { color: #9ab; font-variant-numeric: tabular-nums; flex: none; }
+  .pg.past { color: #aaa; }
+  .pg.future { color: #777; cursor: default; }
+  .pg .live { margin-left: auto; color: #d66; font-size: 11px; flex: none; }
+  #status { padding: 4px 10px; font-size: 12px; color: #888; }
+  #osd { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,.65);
+         color: #eee; padding: 4px 12px; border-radius: 4px; font-size: 15px;
+         display: none; pointer-events: none; z-index: 9;
+         font-variant-numeric: tabular-nums; }
+  #player { position: relative; }
+  @media (max-width: 820px) and (orientation: portrait), (max-width: 560px) {
+    body { flex-direction: column; }
+    #sidebar { width: 100%; height: 48dvh; flex: none; min-height: 200px;
+               border-left: none; border-top: 1px solid #333; }
+  }
+</style>
+</head>
+<body>
+<div id="player">
+  <video id="v" controls muted playsinline webkit-playsinline></video>
+  <div id="osd"></div>
+  <div id="bar">
+    <b id="chname">未选择频道</b>
+    <button id="btnLive" disabled>直播</button>
+    <span id="backLabel">-0s</span>
+    <input type="range" id="backSlider" min="0" max="3600" step="30" value="0" disabled>
+    <span id="vodWrap">
+      <input type="range" id="vodSlider" min="0" max="0" step="5" value="0" disabled>
+      <span id="vodTime">0:00 / 0:00</span>
+      <select id="vodSpeed" title="倍速播放">
+        <option value="0.5">0.5×</option>
+        <option value="0.75">0.75×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+        <option value="2">2×</option>
+      </select>
+    </span>
+    <button id="btnFS">全屏</button>
+    <span id="now"></span>
+  </div>
+</div>
+<div id="sidebar">
+  <div id="tabs">
+    <button id="tabCh" class="on">频道</button>
+    <button id="tabEpg">节目单</button>
+    <button id="tabSch">搜索</button>
+  </div>
+  <div id="search"><input id="q" placeholder="搜索频道…"></div>
+  <div id="cats"></div>
+  <div id="days" style="display:none"></div>
+  <div id="list"></div>
+  <div id="status">加载中…</div>
+</div>
+<script src="/mpegts.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const v = $('v'), list = $('list'), q = $('q'), status = $('status');
+const chname = $('chname'), backSlider = $('backSlider'), backLabel = $('backLabel');
+const vodWrap = $('vodWrap'), vodSlider = $('vodSlider'), vodTime = $('vodTime');
+const vodSpeedSel = $('vodSpeed'), nowEl = $('now'), osd = $('osd');
+const tabCh = $('tabCh'), tabEpg = $('tabEpg'), tabSch = $('tabSch');
+const daysEl = $('days'), catsEl = $('cats'), searchEl = $('search');
+
+let channels = [];       // {no,name,pid,cats(str),ts,hd,igmp}
+let current = null;
+let player = null;
+let mode = 'live';       // live | ts | catchup
+let curBack = 0;
+let progTimer = null;
+let epgCache = {};       // pid -> {ts, programs}
+let epgPid = null, epgProgs = [], epgDay = '';
+let vodBill = '', vodStart = 0, vodEnd = 0;   // bill id / program ms bounds
+let vodBase = 0, vodDur = 0, vodTimer = null, vodDragging = false;
+let vodSpeed = 1, vodSid = '';
+let vodRecovers = 0;   // auto-skip budget for corrupt carrier frames
+let liveRecovers = 0, liveLastRecover = 0;   // rejoin budget (live/ts)
+let catSel = '全部';
+const CATS = ['央视', '卫视', '本地', '4K', '高清', '标清', '少儿', '收费', '购物'];
+
+const fmtT = s => { s = Math.max(0, Math.round(s));
+  return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); };
+const fmtBack = s => s >= 3600
+  ? '-' + Math.floor(s / 3600) + 'h' + Math.round(s % 3600 / 60) + 'm'
+  : s >= 60 ? '-' + Math.floor(s / 60) + 'm' + (s % 60) + 's' : '-' + s + 's';
+const hhmm = ms => { const d = new Date(ms);
+  return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
+const dt = ms => { const d = new Date(ms);
+  return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + hhmm(ms); };
+const dayKey = ms => { const d = new Date(ms);
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)
+       + '-' + ('0' + d.getDate()).slice(-2); };
+const catList = c => (c.cats || '').split(',').filter(Boolean);
+
+function osdShow(t) {
+  osd.textContent = t;
+  osd.style.display = 'block';
+  clearTimeout(osdShow.t);
+  osdShow.t = setTimeout(() => { osd.style.display = 'none'; }, 2000);
+}
+
+/* ---------------- player ---------------- */
+
+function destroyPlayer() {
+  if (player) {
+    try { player.pause(); player.unload();
+          player.detachMediaElement(); player.destroy(); } catch (e) {}
+    player = null;
+  }
+  v.src = '';
+  v.srcObject = null;
+}
+
+function createPlayer(url, noChase) {
+  if (!window.mpegts || !mpegts.getFeatureList().mseLivePlayback) {
+    v.src = url;               // no MSE: feed raw TS to the browser
+    v.play().catch(() => {});
+    return;
+  }
+  player = mpegts.createPlayer({ type: 'mpegts', isLive: true, url: url },
+    { enableStashBuffer: false,
+      liveBufferLatencyChasing: !noChase });  // VOD is paced: chasing would race it
+  player.attachMediaElement(v);
+  player.load();
+  v.oncanplay = () => { v.play().catch(() => {}); };
+  v.play().catch(() => {});
+  player.on(mpegts.Events.ERROR, (type, detail) => {
+    if (mode === 'catchup') {
+      /* carrier streams occasionally carry corrupt frames (ffmpeg sees
+       * decode_slice_header errors too); skip past the bad spot instead
+       * of leaving the player dead */
+      const pos = vodBase + (v.currentTime || 0);
+      if (vodRecovers < 5 && pos > 0) {
+        vodRecovers++;
+        vodTime.textContent = '媒体数据异常，跳过继续…';
+        seekVod(Math.min(pos + 10, vodDur - 5));
+      } else {
+        vodTime.textContent = '播放失败: ' + type + ' ' + (detail || '');
+      }
+      return;
+    }
+    /* live/ts: corrupt frames hard-fail Chrome's decoder
+     * (MEDIA_ERR_DECODE), and mpegts.js cannot append past a non-null
+     * media error - the only way out is a fresh player rejoining the
+     * stream.  The rejoin passes ?nofcc=1: measured on the live feed,
+     * the carrier's FCC push occasionally drops frames (mosaic right
+     * after a switch, hard decode errors) while plain multicast is
+     * clean, so after one failure stop gambling on the push. */
+    const now = Date.now();
+    if (now - liveLastRecover > 60000) liveRecovers = 0;
+    if (liveRecovers < 10) {
+      liveRecovers++;
+      liveLastRecover = now;
+      osdShow('信号异常，重连中…');
+      const c = current, back = curBack;
+      let url = back && c && c.ts
+        ? '/ts/' + c.pid + '.ts?back=' + back : liveUrl(c);
+      if (url) {
+        url += (url.includes('?') ? '&' : '?') + 'nofcc=1';
+        destroyPlayer();
+        createPlayer(url);
+      }
+      return;
+    }
+    status.textContent = '播放失败: ' + type + ' ' + (detail || '')
+      + '（请重新选台重试）';
+  });
+}
+
+function stopTimers() {
+  if (progTimer) { clearInterval(progTimer); progTimer = null; }
+  if (vodTimer) { clearInterval(vodTimer); vodTimer = null; }
+  nowEl.textContent = '';
+}
+
+function exitVodBar() {
+  vodWrap.style.display = 'none';
+  backLabel.style.display = '';
+  backSlider.style.display = '';
+  vodDragging = false;
+  v.playbackRate = 1;
+  v.defaultPlaybackRate = 1;
+}
+
+/* live URL from the channel's igmp address: igmp://g:p -> /udp/g:p */
+function liveUrl(c) {
+  const m = (c.igmp || '').match(/:\/\/([^/]+)/);
+  return m ? '/udp/' + m[1] : null;
+}
+
+function updateBar() {
+  $('btnLive').disabled = mode === 'live';
+  backSlider.disabled = !(mode === 'ts' && current && current.ts);
+}
+
+function select(c, backSeconds) {
+  if (!c) return;
+  if (v.muted && navigator.userActivation && navigator.userActivation.isActive)
+    v.muted = false;
+  stopTimers();
+  exitVodBar();
+  destroyPlayer();
+  current = c;
+  mode = backSeconds ? 'ts' : 'live';
+  curBack = backSeconds || 0;
+  vodBill = '';
+  liveRecovers = 0;
+  v.classList.add('notl');
+  chname.textContent = c.no + ' ' + c.name;
+  backLabel.textContent = fmtBack(curBack);
+  updateBar();
+  renderView();
+  const url = backSeconds && c.ts
+    ? '/ts/' + c.pid + '.ts?back=' + backSeconds : liveUrl(c);
+  if (!url) { status.textContent = '该频道无组播地址'; return; }
+  createPlayer(url);
+  fetchNow(c);
+  progTimer = setInterval(() => fetchNow(c), 30000);
+}
+
+function fetchNow(c) {
+  fetch('/api/now/' + c.pid).then(r => r.json()).then(d => {
+    const cur = d && d.data && d.data.cur;
+    nowEl.textContent = cur
+      ? '正在播: ' + cur.name + ' (' + hhmm(+cur.startTime) + '-' + hhmm(+cur.endTime) + ')'
+      : '';
+  }).catch(() => {});
+}
+
+/* ---------------- VOD (program catch-up) ---------------- */
+
+function vodUrl(pos) {
+  return '/vod/' + current.pid + '.ts?bill=' + vodBill +
+         '&start=' + Math.floor(vodStart / 1000 + pos) +
+         '&end=' + Math.floor(vodEnd / 1000) +
+         '&sid=' + vodSid;
+}
+
+function setSpeed(sp, post) {
+  vodSpeed = sp;
+  v.defaultPlaybackRate = sp;
+  v.playbackRate = sp;
+  if (post && vodSid)
+    fetch('/api/vod_speed?sid=' + vodSid + '&speed=' + sp, { method: 'POST' })
+      .catch(() => {});
+}
+
+function catchup(c, prog) {
+  if (v.muted && navigator.userActivation && navigator.userActivation.isActive)
+    v.muted = false;
+  stopTimers();
+  exitVodBar();
+  destroyPlayer();
+  current = c;
+  mode = 'catchup';
+  vodSid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  vodRecovers = 0;
+  vodBill = prog.id || prog.ID || '';
+  vodStart = +(prog.start || prog.startTime);
+  vodEnd = +(prog.end || prog.endTime);
+  vodBase = 0;
+  vodDur = Math.max(0, Math.round((vodEnd - vodStart) / 1000));
+  chname.textContent = '点播: ' + prog.name + ' (' + hhmm(vodStart) + ')';
+  backLabel.style.display = 'none';
+  backSlider.style.display = 'none';
+  vodSlider.max = vodDur;
+  vodSlider.value = 0;
+  vodSlider.disabled = !vodBill;
+  vodTime.textContent = '0:00 / ' + fmtT(vodDur);
+  vodWrap.style.display = 'flex';
+  v.classList.add('notl');
+  updateBar();
+  if (vodSpeed !== 1) setSpeed(vodSpeed, true);
+  createPlayer(vodUrl(0), true);
+  vodTimer = setInterval(vodTick, 500);
+  renderView();
+}
+
+function seekVod(pos) {
+  pos = Math.max(0, Math.min(vodDur - 5, Math.round(pos)));
+  if (!current || !vodBill) return;
+  destroyPlayer();
+  vodBase = pos;
+  vodTime.textContent = '定位到 ' + fmtT(pos) + ' …';
+  createPlayer(vodUrl(pos), true);
+}
+
+function vodTick() {
+  if (mode !== 'catchup' || !vodDur) return;
+  const pos = vodBase + (v.currentTime || 0);
+  if (!vodDragging && !v.seeking) vodSlider.value = Math.min(pos, vodDur);
+  vodTime.textContent = fmtT(Math.min(pos, vodDur)) + ' / ' + fmtT(vodDur);
+}
+
+/* ---------------- channel list ---------------- */
+
+function matchCat(c) {
+  const cats = catList(c);
+  if (catSel === '全部') return true;
+  if (catSel === '未知') return cats.length === 0;
+  return cats.includes(catSel);
+}
+
+function renderCats() {
+  catsEl.innerHTML = '';
+  for (const name of ['全部'].concat(CATS).concat(['未知'])) {
+    const n = channels.filter(c => {
+      const old = catSel; catSel = name;
+      const ok = matchCat(c);
+      catSel = old;
+      return ok;
+    }).length;
+    if (!n && name !== catSel) continue;
+    const b = document.createElement('button');
+    b.textContent = name;
+    if (name === catSel) b.className = 'on';
+    b.onclick = () => { catSel = name; renderCats(); render(q.value); };
+    catsEl.appendChild(b);
+  }
+}
+
+function render(filter) {
+  list.innerHTML = '';
+  const f = (filter || '').trim().toLowerCase();
+  let shown = 0;
+  for (const c of channels) {
+    if (!matchCat(c)) continue;
+    if (f && !c.name.toLowerCase().includes(f) &&
+        !String(c.no).includes(f)) continue;
+    shown++;
+    const d = document.createElement('div');
+    d.className = 'ch' + (current && current.pid === c.pid ? ' active' : '');
+    const cats = catList(c);
+    d.innerHTML = '<span class="no">' + c.no + '</span><span>' + c.name + '</span>' +
+                  (c.ts ? '<span class="tag">时移</span>' : '') +
+                  (cats[0] ? '<span class="tag">' + cats[0] + '</span>' : '');
+    d.onclick = () => { if (onTab('epg')) showEpg(c); else select(c, 0); };
+    list.appendChild(d);
+  }
+  if (onTab('ch')) status.textContent = shown + ' 个频道';
+}
+
+/* ---------------- EPG panel ---------------- */
+
+function onTab(name) { return $(name === 'ch' ? 'tabCh' :
+  name === 'epg' ? 'tabEpg' : 'tabSch').classList.contains('on'); }
+
+function showEpg(c) {
+  $('tabCh').classList.remove('on'); $('tabSch').classList.remove('on');
+  $('tabEpg').classList.add('on');
+  searchEl.style.display = 'none';
+  catsEl.style.display = 'none';
+  daysEl.style.display = 'flex';
+  if (!c) return;
+  epgPid = c.pid;
+  if (!current || current.pid !== c.pid) select(c, 0);
+  list.innerHTML = '<div class="pg"><span>加载节目单…</span></div>';
+  const cached = epgCache[c.pid];
+  if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
+    renderEpg(c, cached.programs);
+    return;
+  }
+  fetch('/api/programs/' + c.pid).then(r => r.json()).then(d => {
+    epgCache[c.pid] = { ts: Date.now(), programs: d.programs || [] };
+    if (epgPid === c.pid) renderEpg(c, d.programs || []);
+  }).catch(e => { list.innerHTML = '<div class="pg">加载失败: ' + e + '</div>'; });
+}
+
+function showChannels() {
+  $('tabEpg').classList.remove('on'); $('tabSch').classList.remove('on');
+  $('tabCh').classList.add('on');
+  searchEl.style.display = '';
+  catsEl.style.display = 'flex';
+  daysEl.style.display = 'none';
+  epgPid = null;
+  q.placeholder = '搜索频道…';
+  renderCats();
+  render(q.value);
+}
+
+function renderEpg(c, progs) {
+  const today = dayKey(Date.now());
+  const byDay = {};
+  for (const p of progs)
+    (byDay[dayKey(+p.start)] = byDay[dayKey(+p.start)] || []).push(p);
+  const base = new Date(); base.setHours(0, 0, 0, 0);
+  const days = Object.keys(byDay).sort().reverse();
+  daysEl.innerHTML = '';
+  let sel = epgDay && days.includes(epgDay) ? epgDay
+          : days.includes(today) ? today : days[0];
+  epgDay = sel;
+  for (const k of days) {
+    const d0 = new Date(k + 'T00:00:00');
+    const diff = Math.round((d0 - base) / 86400000);
+    const b = document.createElement('button');
+    b.textContent = diff === 0 ? '今天' : diff === -1 ? '昨天'
+                  : k.slice(5).replace('-', '/') + ' 周' + '日一二三四五六'[d0.getDay()];
+    if (k === sel) b.className = 'on';
+    b.onclick = () => { epgDay = k; renderEpg(c, progs); };
+    daysEl.appendChild(b);
+  }
+  epgProgs = byDay[sel] || [];
+  renderEpgList();
+}
+
+function renderEpgList() {
+  if (!onTab('epg')) return;
+  const c = channels.find(x => x.pid === epgPid);
+  const now = Date.now();
+  list.innerHTML = '';
+  for (const p of epgProgs) {
+    const st = +p.start, en = +p.end;
+    const past = en <= now, isNow = st <= now && now < en;
+    const d = document.createElement('div');
+    d.className = 'pg' + (past ? ' past' : st > now ? ' future' : '');
+    if (vodStart === st) d.className += ' active';
+    d.innerHTML = '<span class="t">' + hhmm(st) + '-' + hhmm(en) + '</span>' +
+                  '<span>' + p.name + '</span>' +
+                  (isNow ? '<span class="live">●直播中</span>' : '');
+    if (st > now) d.title = '节目尚未开始';
+    else if (c && c.ts && p.id) {
+      d.title = '点击从节目开头点播';
+      d.onclick = () => catchup(c, p);
+    } else d.title = '该频道不支持节目点播';
+    list.appendChild(d);
+  }
+  if (!epgProgs.length) list.innerHTML = '<div class="pg">该日无节目数据</div>';
+}
+
+/* ---------------- program search ---------------- */
+
+let searchTimer = null;
+
+function showSearch() {
+  $('tabCh').classList.remove('on'); $('tabEpg').classList.remove('on');
+  $('tabSch').classList.add('on');
+  searchEl.style.display = '';
+  catsEl.style.display = 'none';
+  daysEl.style.display = 'none';
+  epgPid = null;
+  q.placeholder = '搜索节目, 如: 新闻联播';
+  q.focus();
+  renderSearch(q.value);
+}
+
+function renderSearch(kw) {
+  clearTimeout(searchTimer);
+  kw = (kw || '').trim();
+  if (!kw) {
+    list.innerHTML = '<div class="pg">输入节目名, 列出所有频道 7 天内的该节目, 点击点播</div>';
+    return;
+  }
+  list.innerHTML = '<div class="pg">搜索中…</div>';
+  searchTimer = setTimeout(() => doSearch(kw), 300);
+}
+
+function doSearch(kw) {
+  fetch('/api/search?q=' + encodeURIComponent(kw)).then(r => r.json()).then(d => {
+    if (!onTab('sch') || q.value.trim() !== kw) return;
+    if (d.building) {
+      list.innerHTML = '<div class="pg">节目索引构建中(首次约 1-2 分钟), 自动重试…</div>';
+      setTimeout(() => { if (onTab('sch') && q.value.trim() === kw) doSearch(kw); }, 3000);
+      return;
+    }
+    const items = d.items || [];
+    const now = Date.now();
+    list.innerHTML = '';
+    for (const p of items) {
+      const st = +p.start, en = +p.end;
+      const d2 = document.createElement('div');
+      d2.className = 'pg' + (en <= now ? ' past' : st > now ? ' future' : '');
+      d2.innerHTML = '<span class="t">' + dt(st) + '-' + hhmm(en) + '</span>' +
+                     '<span>' + p.name + '</span>' +
+                     '<span class="tag">' + p.chname + '</span>';
+      if (en <= now && p.id) {
+        d2.title = '点击点播该节目';
+        d2.onclick = () => {
+          const c = channels.find(x => x.pid === p.pid);
+          if (c) catchup(c, p);
+        };
+      } else if (st > now) d2.title = '节目尚未开始';
+      list.appendChild(d2);
+    }
+    if (!items.length) list.innerHTML = '<div class="pg">无匹配节目</div>';
+    status.textContent = items.length + ' 条结果';
+  }).catch(e => { list.innerHTML = '<div class="pg">搜索失败: ' + e + '</div>'; });
+}
+
+/* ---------------- tabs & controls ---------------- */
+
+function renderView() {
+  if (onTab('epg')) renderEpgList();
+  else if (onTab('sch')) renderSearch(q.value);
+  else render(q.value);
+}
+
+$('tabCh').onclick = showChannels;
+$('tabEpg').onclick = () => showEpg(current);
+$('tabSch').onclick = showSearch;
+q.oninput = () => renderView();
+
+function goLive() {
+  if (current && mode !== 'live') {
+    backSlider.value = 0;
+    backLabel.textContent = '-0s';
+    select(current, 0);
+  }
+}
+$('btnLive').onclick = goLive;
+backSlider.oninput = () => { backLabel.textContent = fmtBack(+backSlider.value); };
+backSlider.onchange = () => { if (current && current.ts) select(current, +backSlider.value); };
+vodSlider.oninput = () => {
+  vodDragging = true;
+  vodTime.textContent = fmtT(+vodSlider.value) + ' / ' + fmtT(vodDur);
+};
+vodSlider.onchange = () => {
+  vodDragging = false;
+  if (mode === 'catchup') seekVod(+vodSlider.value);
+};
+vodSpeedSel.onchange = () => setSpeed(+vodSpeedSel.value || 1, true);
+$('btnFS').onclick = () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if ($('player').requestFullscreen) $('player').requestFullscreen()
+    .catch(() => { if (v.webkitEnterFullscreen) v.webkitEnterFullscreen(); });
+  else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+};
+
+/* keyboard: remote-control style */
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' ||
+            t.tagName === 'TEXTAREA')) return;
+  if (e.repeat && e.key !== '+' && e.key !== '-' && e.key !== '=') return;
+  const pos = () => vodBase + (v.currentTime || 0);
+  switch (e.key) {
+    case ' ':
+      if (v.paused) v.play(); else v.pause();
+      e.preventDefault();
+      break;
+    case 'ArrowUp': case 'PageUp': stepChannel(-1); e.preventDefault(); break;
+    case 'ArrowDown': case 'PageDown': stepChannel(1); e.preventDefault(); break;
+    case 'ArrowLeft':
+      if (mode === 'catchup') seekVod(pos() - 10);
+      else if (current && current.ts) {
+        if (mode === 'live') select(current, 30);
+        else if (curBack < 3600) select(current, Math.min(curBack + 30, 3600));
+        else osdShow('已到时移最早');
+      } else osdShow('该频道不支持时移');
+      e.preventDefault();
+      break;
+    case 'ArrowRight':
+      if (mode === 'catchup') seekVod(pos() + 10);
+      else if (mode === 'ts') select(current, Math.max(curBack - 30, 0));
+      e.preventDefault();
+      break;
+    case 'l': case 'L': goLive(); break;
+    case 'm': case 'M': v.muted = !v.muted; osdShow(v.muted ? '静音' : '取消静音'); break;
+    case 'f': case 'F': $('btnFS').onclick(); break;
+    default:
+      if (/^[0-9]$/.test(e.key)) { numDigit(e.key); e.preventDefault(); }
+  }
+});
+
+function stepChannel(dir) {
+  if (!channels.length) return;
+  const n = channels.length;
+  const cur = channels.findIndex(c => current && c.pid === current.pid);
+  const j = cur < 0 ? (dir === 1 ? -1 : 0) : cur;
+  zapTo(channels[(j + dir + n) % n]);
+}
+
+function zapTo(c) {
+  select(c, 0);
+  osdShow(c.no + ' ' + c.name);
+}
+
+let numBuf = '', numTimer = null;
+function numDigit(d) {
+  if (numBuf.length >= 4) numBuf = '';
+  numBuf += d;
+  const exact = channels.find(c => String(c.no) === numBuf);
+  const longer = channels.some(c => String(c.no).startsWith(numBuf) &&
+                                    String(c.no) !== numBuf);
+  clearTimeout(numTimer);
+  if (!longer) {
+    const typed = numBuf;
+    numBuf = '';
+    if (exact) zapTo(exact); else osdShow('无频道号 ' + typed);
+    return;
+  }
+  osdShow('频道号: ' + numBuf + '_');
+  numTimer = setTimeout(() => {
+    const c = channels.find(x => String(x.no) === numBuf);
+    const typed = numBuf;
+    numBuf = '';
+    if (c) zapTo(c); else osdShow('无频道号 ' + typed);
+  }, 900);
+}
+
+/* ---------------- boot ---------------- */
+
+fetch('/api/channels').then(r => r.json()).then(d => {
+  channels = (d.channels || []).sort((a, b) => a.no - b.no);
+  renderCats();
+  render('');
+}).catch(e => { status.textContent = '频道加载失败: ' + e; });
+updateBar();
+</script>
+</body>
+</html>

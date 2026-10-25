@@ -1,0 +1,18 @@
+#!/bin/sh
+# Inbound IGMP and UDP multicast on the IPTV vlan must reach iptvd;
+# with no zone covering network "iptv" the fw3/fw4 input policy drops
+# them (live TV goes black while unicast TCP keeps working, because
+# those ride the conntrack ESTABLISHED accept).  Idempotent: safe to
+# re-run, overwrites the named section only.
+[ -f /etc/config/firewall ] || exit 0
+
+uci set firewall.iptv_zone=zone
+uci set firewall.iptv_zone.name='iptv'
+uci delete firewall.iptv_zone.network 2>/dev/null
+uci add_list firewall.iptv_zone.network='iptv'
+uci set firewall.iptv_zone.input='ACCEPT'
+uci set firewall.iptv_zone.output='ACCEPT'
+uci set firewall.iptv_zone.forward='REJECT'
+uci commit firewall
+
+exit 0
