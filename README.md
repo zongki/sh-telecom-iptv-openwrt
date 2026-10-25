@@ -45,7 +45,8 @@ make -j$(nproc) package/sh-telecom-iptv/compile   # 只编本包
 
 产物在 `bin/packages/<arch>/base/`（25.12 为 .apk，19.07~21.02 老树
 为 .ipk）。需要 4K 台的 AC-3→AAC 转码时，构建树另需
-`CONFIG_BUILD_PATENTED=y` 并在设备上安装 `ffmpeg` 包（见 1.1 节），
+`CONFIG_BUILD_PATENTED=y` 并在设备上安装 ffmpeg 包（推荐轻量的
+`ffmpeg-custom` 变体，配置见 1.1 节与 `docs/ffmpeg-custom-aac.patch`），
 缺了只是回退直通、不影响其他功能。
 
 ### 3. 安装到设备
@@ -267,11 +268,20 @@ MSE 无 ac-3 解码许可，音轨进不了 MediaSource：画面正常但无声�
 原项目 `xcode.aac_restream` 同构，点播含分片下载中止接口
 vod_halt）。行为细节：
 
-- 需板上安装 `ffmpeg` 包，且构建侧两个前提（默认都不满足）：`.config` 开 `CONFIG_BUILD_PATENTED=y`
-  （否则 h264/hevc 解码器与解析器被禁，ffmpeg 6 下 `-c:v copy`
-  探测拿不到视频参数、视频流停滞）；ffmpeg 构建须无 v4l2m2m
-  家族（路由器无 /dev/video 设备，而它注册在软解之前会毒化
-  find_stream_info——feed Makefile 本地补丁 --disable）。
+- xcode 只需要 ffmpeg 的一个很小子集（mpegts demux/mux、AC-3 解码、
+  HEVC 探测、原生 AAC 编码、swresample 降混）。**推荐用 feed 自带的
+  `libffmpeg-custom`/`ffmpeg-custom` 裁剪变体**替代 `libffmpeg-full`：
+  实测 aarch64 上 libavcodec 从 7.7MB 降到 1.2MB（apk 6.6MB→0.9MB，
+  整套占用约省 13MB），转码 CPU 持平（~5%）。所需包配置与 custom
+  白名单的一行补丁（上游漏了原生 aac encoder）见
+  `docs/ffmpeg-custom-aac.patch`。
+  若沿用 `ffmpeg`/`libffmpeg-full`：构建侧两个前提（默认都不满足）：
+  `.config` 开 `CONFIG_BUILD_PATENTED=y`（否则 h264/hevc 解码器与
+  解析器被禁，ffmpeg 6 下 `-c:v copy` 探测拿不到视频参数、视频流
+  停滞）；ffmpeg 构建须无 v4l2m2m 家族（路由器无 /dev/video 设备，
+  而它注册在软解之前会毒化 find_stream_info——feed Makefile 本地
+  补丁 --disable）。custom 变体因 `--disable-everything` 白名单制
+  天然无此问题。
 - 未装 ffmpeg 时告警一次并直通原始流（等价 1.0 行为）。
 - ffmpeg 中途退出则该 HTTP 响应正常收尾，客户端重连/重选台即可。
 - UCI `option xcode '0'` 可整体关闭（默认开）。

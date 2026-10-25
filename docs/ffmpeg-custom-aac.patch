@@ -1,0 +1,40 @@
+# OpenWrt packages feed: expose ffmpeg's native AAC encoder to the
+# libffmpeg-custom variant.  Upstream's custom whitelist omits it, but
+# the AC-3 -> AAC transcode in this package's xcode module uses
+# `-c:a aac` (the native encoder - no external dependency needed).
+#
+# Apply inside the OpenWrt tree:  patch -p1 -d feeds/packages < this file
+# (re-apply after `./scripts/feeds update`).
+#
+# Needed package config (make menuconfig under Libraries -> libffmpeg-custom):
+#   FFMPEG_CUSTOM_PROGRAMS=y            (brings swresample for `-ac 2`)
+#   FFMPEG_CUSTOM_ENCODER_aac=y
+#   FFMPEG_CUSTOM_DECODER_ac3=y  FFMPEG_CUSTOM_DECODER_hevc=y
+#   FFMPEG_CUSTOM_PARSER_ac3=y  FFMPEG_CUSTOM_PARSER_aac=y
+#   FFMPEG_CUSTOM_PARSER_hevc=y  FFMPEG_CUSTOM_PARSER_h264=y
+#   FFMPEG_CUSTOM_MUXER_mpegts=y  FFMPEG_CUSTOM_DEMUXER_mpegts=y
+#   FFMPEG_CUSTOM_PROTOCOL_file=y  FFMPEG_CUSTOM_PROTOCOL_pipe=y
+# Then select ffmpeg-custom (the CLI the daemon execs).
+#
+--- a/multimedia/ffmpeg/Config.in
++++ b/multimedia/ffmpeg/Config.in
+@@ -162,6 +162,9 @@ config FFMPEG_CUSTOM_SELECT_libx264
+
+ comment "Encoders"
+
++config FFMPEG_CUSTOM_ENCODER_aac
++	bool "AAC (native)"
++
+ config FFMPEG_CUSTOM_ENCODER_ac3
+ 	bool "AC3"
+
+--- a/multimedia/ffmpeg/Makefile
++++ b/multimedia/ffmpeg/Makefile
+@@ -25,6 +25,7 @@ PKG_CPE_ID:=cpe:/a/ffmpeg:ffmpeg
+ PKG_BUILD_PARALLEL:=1
+
+ FFMPEG_CUSTOM_ENCODERS:= \
++	aac \
+ 	ac3 \
+ 	jpegls \
+ 	mpeg1video \
