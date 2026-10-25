@@ -25,7 +25,7 @@ clone（或直接拷贝）到一份现成 OpenWrt 源码树的 `package/` 目录
 
 ```
 cd <openwrt>/package
-git clone https://github.com/zongki/sh-telecom-iptv.git
+git clone https://github.com/zongki/sh-telecom-iptv-openwrt.git
 ```
 
 包声明 `DEPENDS:=+libuci +libmicrohttpd`，依赖由包系统自动解析。
