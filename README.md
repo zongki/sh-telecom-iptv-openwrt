@@ -1,13 +1,15 @@
 # sh-telecom-iptv — 上海电信 IPTV 软终端（OpenWrt 软件包）
 
-按标准 OpenWrt package 流程开发。当前版本 **1.1.0**：
+本项目是 [zongki/sh-telecom-iptv](https://github.com/zongki/sh-telecom-iptv)
+（Python 版，Docker 容器发布、依赖外部 udpxy）的 **OpenWrt 原生移植**，
+同一作者。以单个守护进程直接部署在 OpenWrt 上：内置组播中继
+（udpxy 兼容端点），免装 udpxy、免 Docker；认证/EPG/时移/点播与
+Python 版行为对齐。当前版本 **1.1.0**：
 组播中继（含 RTP 乱序恢复 + FCC 快速换台）+ 认证链（4kLogAuth →
 ottauth → EPG 会话，后台自动续期）+ 频道表/节目单/搜索 + RTSP 时移
 回看 + 按节目 HLS 点播 + **AC-3→AAC 音频转码**（4K 台浏览器可听可
 调音量）+ **Web 前端**（`/`，mpegts.js 播放器，随包分发）+ UCI 配置
 + procd 服务。
-（Python 参考实现：zongki/sh-telecom-iptv）
-
 安装后组件：守护进程 `/usr/bin/iptvd`，UCI 配置
 `/etc/config/sh-telecom-iptv`，服务 `/etc/init.d/sh-telecom-iptv`，
 Web 静态文件 `/usr/share/sh-telecom-iptv/web/`。
@@ -50,7 +52,7 @@ gcc -std=gnu99 -Wall -Wextra -Isrc -o /tmp/xcode_test \
     test/xcode_test.c src/xcode.c src/log.c -lpthread && /tmp/xcode_test
 ```
 
-auth_vector_test 的期望值由 Python 参考实现生成（authenticator =
+auth_vector_test 的期望值由 Python 版（原项目）生成（authenticator =
 AES-128-ECB(MD5("123456"), JSON)，IP 为逗号分隔三位补零）；
 auth_chain_test 起本地 fixture（`test/fixtures/auth_server.py`，
 模拟 7 步链含 302/chunked/假 Set-Cookie）跑通全链后销毁。
@@ -64,7 +66,7 @@ API 形状响应的 mock（含静态文件伺服），浏览器打开
 | 项 | 策略 |
 |---|---|
 | 内核 | 纯用户态，无 kmod 依赖 |
-| 加密 | MD5 / AES-128-ECB 内置（已与 Python 参考实现对拍一致），避开 libmbedtls 在 19.07↔25.12 的包名/ABI 变化 |
+| 加密 | MD5 / AES-128-ECB 内置（已与 Python 版对拍一致），避开 libmbedtls 在 19.07↔25.12 的包名/ABI 变化 |
 | 依赖库 | 仅 `+libuci +libmicrohttpd`；libuci API 与 MHD 所用 API 子集（0.9.59→1.x）在区间内稳定 |
 | C 标准 | C99，gcc 7（19.07）与 gcc 14（25.12）均可；epoch 一律 `int64_t`，规避 musl 1.1 的 32 位 time_t |
 | init | procd（`USE_PROCD`、respawn、`procd_set_param file`、`procd_add_reload_trigger`），19.07 起语义一致 |
@@ -100,16 +102,18 @@ wan.85）为空则中继不启动；`port` 默认 4022；`rtp` auto/always/never
 | `/` | **Web 前端**（`/usr/share/sh-telecom-iptv/web/`，未安装时回退内建索引页） |
 
 慢客户端（4 MiB FIFO 溢出）会被踢掉而不是拖死组线程；
-`max_clients` 默认 20，对齐 Python 版 README 的经验值。
+`max_clients` 默认 20，沿用原项目的经验值。
 
-## 参考项目
+## 相关项目
 
+- **[zongki/sh-telecom-iptv](https://github.com/zongki/sh-telecom-iptv)**
+  （原项目，同一作者）：Python 实现，Docker 容器发布，依赖外部
+  udpxy 做组播转 HTTP。本项目的认证/EPG/时移/点播行为基准；本版
+  以 C 重写并原生集成组播中继，免去 udpxy 依赖。
 - **stackia/rtp2httpd**（GPLv2）：同类 IPTV 转发服务器（组播
   RTP/RTSP→HTTP、FCC 快速换台、HLS 反代）。**只参考其协议事实与
   架构思想，代码独立实现**，本包保持 MIT。协议摘录（含电信 FCC
   报文格式）、阅读地图、许可边界见 `docs/rtp2httpd-reference.md`。
-- zongki/sh-telecom-iptv（Python 参考实现）：认证/EPG/时移的行为
-  基准。
 
 ## 认证链（0.2）
 
@@ -141,7 +145,7 @@ RTSP 客户端（timeshift.py → C）：DESCRIBE 沿 302 链解析出
 Content-Base（55554 流端点，URL 内嵌 AuthInfo 与
 `DURATION=<UTC>-<UTC>` 滚动缓冲窗口）→ SETUP
 `MP2T/TCP;interleaved=0-1` → PLAY（`Range: clock=<UTC>-` 定位）→
-解 `$` interleaved 帧输出裸 TS。`/ts` 端点规则与 Python 版一致：
+解 `$` interleaved 帧输出裸 TS。`/ts` 端点规则与原项目一致：
 `back=N` 相对回看、`start/utc=T` 按时间点播（毫秒自动归秒、
 临近当前时刻退到直播边缘、早于缓冲起点静默钳制）；凭据过期
 （401/454）时同步强刷认证并重试一次（timeshift_url 内嵌的
@@ -199,7 +203,7 @@ MSE 无 ac-3 解码许可，音轨进不了 MediaSource：画面正常但无声�
 频道的流经 ffmpeg 子进程（`-c:v copy -c:a aac -b:a 256k -ac 2`，
 5.1 必须降混双声道——mpegts.js 声明 HE-AAC 而 Chrome 的 HE-AAC
 不支持 5.1，6 声道会拖垮整个 MediaSource 会话；每流一个进程，与
-Python 参考 `xcode.aac_restream` 同构，点播含分片下载中止接口
+原项目 `xcode.aac_restream` 同构，点播含分片下载中止接口
 vod_halt）。行为细节：
 
 - 需板上安装 `ffmpeg` 包，且构建侧两个前提（默认都不满足）：`.config` 开 `CONFIG_BUILD_PATENTED=y`
